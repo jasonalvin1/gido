@@ -1,0 +1,70 @@
+name: gido
+description: 기억 도우미 - 어르신을 위한 기억 보조 앱
+
+publish_to: 'none'
+
+version: 1.0.0+6
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
+  flutter_animate: ^4.3.0
+
+  # 지문/생체 인증
+  local_auth: ^2.2.0
+
+  # 보안 저장소 (비밀번호 등 암호화 저장)
+  flutter_secure_storage: ^9.2.2
+
+  # 로컬 데이터베이스
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # 상태관리
+  provider: ^6.1.1
+
+  # 유틸리티
+  uuid: ^4.3.3
+
+  intl: ^0.20.2
+  url_launcher: ^6.2.5
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.2
+  encrypt: ^5.0.3
+  share_plus: ^10.0.0
+  file_picker: ^8.0.0
+
+  # 로컬 알림 (할일 마감일 알람)
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+
+  # 음력 달력 변환
+  lunar: ^1.7.8
+
+  # 음성 입력
+  speech_to_text: ^7.0.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icons/

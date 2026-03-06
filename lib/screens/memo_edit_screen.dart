@@ -7,9 +7,11 @@ import 'package:speech_to_text/speech_to_text.dart';
 import '../models/memo_model.dart';
 import '../services/app_state.dart';
 import '../utils/app_theme.dart';
+import '../widgets/lunar_calendar_picker.dart';
 
 // 알람 datetime 저장 형식
 const String _alarmDateTimeFormat = 'yyyy년 M월 d일 HH:mm';
+
 
 class MemoEditScreen extends StatefulWidget {
   final Category category;
@@ -244,6 +246,7 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
     super.dispose();
   }
 
+  // ── 날짜 선택: 네이버 스타일 양(음)력 달력 ──────────────────────────────
   Future<void> _pickDate(String field) async {
     DateTime initialDate = DateTime.now();
     final currentText = _fieldControllers[field]?.text ?? '';
@@ -252,48 +255,18 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
         initialDate = DateFormat('yyyy년 M월 d일').parse(currentText);
       } catch (_) {}
     }
+    if (!mounted) return;
 
-    final picked = await showDatePicker(
+    final picked = await showLunarCalendarPicker(
       context: context,
+      themeColor: _catColor,
       initialDate: initialDate,
-      firstDate: DateTime(1920),
-      lastDate: DateTime(2100),
-      locale: const Locale('ko', 'KR'),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: _catColor,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: AppTheme.textPrimary,
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: _catColor,
-                textStyle: const TextStyle(fontSize: 18),
-              ),
-            ),
-            datePickerTheme: DatePickerThemeData(
-              headerHelpStyle: const TextStyle(fontSize: 18),
-              dayStyle: const TextStyle(fontSize: 16),
-              yearStyle: const TextStyle(fontSize: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
-    if (picked != null) {
+    if (picked != null && mounted) {
       final formatted = DateFormat('yyyy년 M월 d일').format(picked);
       _fieldControllers[field]?.text = formatted;
-      setState(() {
-        _lunarDates[field] = _toLunarFromDate(formatted);
-      });
+      setState(() => _lunarDates[field] = _toLunarFromDate(formatted));
     }
   }
 
@@ -624,6 +597,7 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
 
   Widget _buildAlarmDateTimeButton(String field) {
     final hasValue = (_fieldControllers[field]?.text ?? '').isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -631,48 +605,64 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
           onTap: () => _pickAlarmDateTime(field),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: hasValue
+                  ? _catColor.withOpacity(isDark ? 0.12 : 0.06)
+                  : (isDark ? const Color(0xFF2C2C2E) : Colors.white),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: hasValue ? _catColor : const Color(0xFFE0E0E0),
-                width: 2,
+                color: hasValue
+                    ? _catColor.withOpacity(0.5)
+                    : (isDark ? Colors.grey[700]! : const Color(0xFFE0E0E0)),
+                width: hasValue ? 1.5 : 1.2,
               ),
             ),
             child: Row(
               children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _catColor.withOpacity(isDark ? 0.25 : 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.alarm, color: _catColor, size: 20),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     hasValue
                         ? _fieldControllers[field]!.text
-                        : '⏰ 날짜와 시간을 선택하세요',
+                        : '날짜와 시간을 선택하세요',
                     style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
+                      fontSize: 20,
+                      fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
                       color: hasValue
-                          ? AppTheme.textPrimary
-                          : const Color(0xFFBBBBBB),
+                          ? (isDark ? Colors.grey[100] : const Color(0xFF222222))
+                          : (isDark ? Colors.grey[600] : const Color(0xFFBBBBBB)),
                     ),
                   ),
                 ),
-                Icon(Icons.alarm, color: _catColor, size: 28),
               ],
             ),
           ),
         ),
         const SizedBox(height: 6),
-        // 음력 날짜 표시 (할일 마감일)
         if ((_lunarDates[field] ?? '').isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 4, left: 4),
             child: Row(
               children: [
-                Icon(Icons.brightness_3, size: 14, color: Colors.indigo[300]),
+                Icon(Icons.brightness_3,
+                    size: 12,
+                    color: isDark ? Colors.indigo[200] : Colors.indigo[300]),
                 const SizedBox(width: 4),
                 Text(
                   _lunarDates[field]!,
-                  style: TextStyle(fontSize: 14, color: Colors.indigo[300]),
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.indigo[200] : Colors.indigo[400]),
                 ),
               ],
             ),
@@ -681,7 +671,9 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
           padding: const EdgeInsets.only(left: 4),
           child: Text(
             '🔔 시간을 설정하면 지정한 시각에 알림을 보내드려요',
-            style: TextStyle(fontSize: 15, color: Colors.grey[500]),
+            style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.grey[500] : Colors.grey[500]),
           ),
         ),
       ],
@@ -692,100 +684,123 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
     final value = _fieldControllers[field]?.text ?? '';
     final hasValue = value.isNotEmpty;
     final lunarText = _lunarDates[field] ?? '';
-    // 생일 카테고리: 음력 생일의 올해 양력 계산
-    final birthdayText = (widget.category.id == 'birthday' && hasValue)
-        ? _getLunarBirthdayThisYear(value)
-        : '';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: () => _pickDate(field),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: hasValue ? _catColor : const Color(0xFFE0E0E0),
-                width: 2,
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    hasValue ? value : '📅 날짜를 선택하세요',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
-                      color: hasValue ? AppTheme.textPrimary : const Color(0xFFBBBBBB),
-                    ),
-                  ),
-                ),
-                Icon(Icons.calendar_today, color: _catColor, size: 28),
-              ],
-            ),
+    return GestureDetector(
+      onTap: () => _pickDate(field),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: hasValue
+              ? _catColor.withOpacity(isDark ? 0.12 : 0.06)
+              : (isDark ? const Color(0xFF2C2C2E) : Colors.white),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: hasValue
+                ? _catColor.withOpacity(0.5)
+                : (isDark ? Colors.grey[700]! : const Color(0xFFE0E0E0)),
+            width: hasValue ? 1.5 : 1.2,
           ),
         ),
-        // 음력 날짜 표시
-        if (lunarText.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Row(
-              children: [
-                Icon(Icons.brightness_3, size: 14, color: Colors.indigo[300]),
-                const SizedBox(width: 4),
-                Text(
-                  lunarText,
-                  style: TextStyle(fontSize: 14, color: Colors.indigo[300]),
-                ),
-              ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _catColor.withOpacity(isDark ? 0.25 : 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.calendar_today, color: _catColor, size: 20),
             ),
-          ),
-        // 생일 카테고리: 올해 음력 생일 양력 D-day
-        if (birthdayText.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 4),
-            child: Text(
-              birthdayText,
-              style: const TextStyle(fontSize: 13, color: Color(0xFFE91E63)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hasValue ? value : '날짜를 선택하세요',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
+                      color: hasValue
+                          ? (isDark ? Colors.grey[100] : const Color(0xFF222222))
+                          : (isDark ? Colors.grey[600] : const Color(0xFFBBBBBB)),
+                    ),
+                  ),
+                  if (lunarText.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(Icons.brightness_3,
+                            size: 12,
+                            color: isDark ? Colors.indigo[200] : Colors.indigo[300]),
+                        const SizedBox(width: 4),
+                        Text(
+                          lunarText,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? Colors.indigo[200] : Colors.indigo[400],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-      ],
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildDateTimeButton(String field) {
     final hasValue = (_fieldControllers[field]?.text ?? '').isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: () => _pickDateTime(field),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: hasValue
+              ? _catColor.withOpacity(isDark ? 0.12 : 0.06)
+              : (isDark ? const Color(0xFF2C2C2E) : Colors.white),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: hasValue ? _catColor : const Color(0xFFE0E0E0),
-            width: 2,
+            color: hasValue
+                ? _catColor.withOpacity(0.5)
+                : (isDark ? Colors.grey[700]! : const Color(0xFFE0E0E0)),
+            width: hasValue ? 1.5 : 1.2,
           ),
         ),
         child: Row(
           children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _catColor.withOpacity(isDark ? 0.25 : 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.access_time, color: _catColor, size: 20),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                hasValue ? _fieldControllers[field]!.text : '🕐 요일과 시간을 선택하세요',
+                hasValue ? _fieldControllers[field]!.text : '요일과 시간을 선택하세요',
                 style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
-                  color: hasValue ? AppTheme.textPrimary : const Color(0xFFBBBBBB),
+                  fontSize: 20,
+                  fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
+                  color: hasValue
+                      ? (isDark ? Colors.grey[100] : const Color(0xFF222222))
+                      : (isDark ? Colors.grey[600] : const Color(0xFFBBBBBB)),
                 ),
               ),
             ),
-            Icon(Icons.access_time, color: _catColor, size: 28),
           ],
         ),
       ),
@@ -818,47 +833,72 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
           else if (isDateTime)
             _buildDateTimeButton(field)
           else
-            TextField(
-              controller: _fieldControllers[field],
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w500),
-              obscureText: isSensitive ? isObscure : false,
-              keyboardType: isNumeric
-                  ? TextInputType.number
-                  : field == '메모'
-                      ? TextInputType.multiline
-                      : TextInputType.text,
-              maxLines: isSensitive ? 1 : (field == '메모' ? 3 : 1),
-              decoration: InputDecoration(
-                hintText: '${_eul(field)} 입력하세요',
-                suffixIcon: isSensitive
-                    // 민감 필드: 눈 아이콘만
-                    ? IconButton(
-                        icon: Icon(
-                          isObscure ? Icons.visibility_off : Icons.visibility,
-                          color: _catColor,
-                          size: 26,
+            Builder(builder: (context) {
+              final isDark = Theme.of(context).brightness == Brightness.dark;
+              return TextField(
+                controller: _fieldControllers[field],
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? Colors.grey[100] : const Color(0xFF222222),
+                ),
+                obscureText: isSensitive ? isObscure : false,
+                keyboardType: isNumeric
+                    ? TextInputType.number
+                    : field == '메모'
+                        ? TextInputType.multiline
+                        : TextInputType.text,
+                maxLines: isSensitive ? 1 : (field == '메모' ? 3 : 1),
+                decoration: InputDecoration(
+                  hintText: '${_eul(field)} 입력하세요',
+                  hintStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.grey[600] : const Color(0xFFBBBBBB),
+                  ),
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                      color: isDark ? Colors.grey[700]! : const Color(0xFFE0E0E0),
+                      width: 1.2,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: _catColor, width: 2),
+                  ),
+                  suffixIcon: isSensitive
+                      ? IconButton(
+                          icon: Icon(
+                            isObscure ? Icons.visibility_off : Icons.visibility,
+                            color: _catColor,
+                            size: 24,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscureFields[field] = !isObscure),
+                        )
+                      : IconButton(
+                          icon: Icon(
+                            _activeListeningField == field
+                                ? Icons.mic
+                                : Icons.mic_none,
+                            color: _activeListeningField == field
+                                ? Colors.red
+                                : _catColor.withAlpha(160),
+                            size: 24,
+                          ),
+                          tooltip: _activeListeningField == field
+                              ? '녹음 중 (탭하면 중지)'
+                              : '음성으로 입력',
+                          onPressed: () => _toggleListening(field),
                         ),
-                        onPressed: () =>
-                            setState(() => _obscureFields[field] = !isObscure),
-                      )
-                    // 일반 필드: 마이크 아이콘
-                    : IconButton(
-                        icon: Icon(
-                          _activeListeningField == field
-                              ? Icons.mic
-                              : Icons.mic_none,
-                          color: _activeListeningField == field
-                              ? Colors.red
-                              : _catColor.withAlpha(160),
-                          size: 26,
-                        ),
-                        tooltip: _activeListeningField == field
-                            ? '녹음 중 (탭하면 중지)'
-                            : '음성으로 입력',
-                        onPressed: () => _toggleListening(field),
-                      ),
-              ),
-            ),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -904,13 +944,28 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
   }
 
   Widget _buildFieldLabel(String label) {
-    return Text(
-      label,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: Color(0xFF555555),
-      ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          margin: const EdgeInsets.only(right: 8),
+          decoration: BoxDecoration(
+            color: _catColor,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.grey[200] : const Color(0xFF444444),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -3,7 +3,7 @@ description: 기억 도우미 - 어르신을 위한 기억 보조 앱
 
 publish_to: 'none'
 
-version: 1.0.0+6
+version: 1.0.2+9
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -52,8 +52,13 @@ dependencies:
 
   # 음성 입력
   speech_to_text: ^7.0.0
+
+  # PBKDF2용 HMAC-SHA256 (백업 암호화 키 파생)
+  crypto: ^3.0.3
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.3

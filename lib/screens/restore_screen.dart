@@ -9,11 +9,11 @@ import '../services/backup_service.dart';
 import '../services/database_service.dart';
 import '../utils/app_theme.dart';
 
-/// 백업 파일 복원 화면
+/// 내 기억 가져오기 화면
 ///
 /// 진입 경로:
 ///   1. 카카오톡에서 .gido 파일 탭 → 자동으로 열림 (initialFilePath 제공)
-///   2. 홈 화면 "복원" 버튼 탭 → 수동으로 파일 선택
+///   2. 홈 화면 "내 기억 가져오기" 버튼 탭 → 수동으로 파일 선택
 class RestoreScreen extends StatefulWidget {
   /// 카카오톡 등 외부에서 받아온 파일 경로 (없으면 null)
   final String? initialFilePath;
@@ -25,7 +25,7 @@ class RestoreScreen extends StatefulWidget {
 }
 
 class _RestoreScreenState extends State<RestoreScreen> {
-  final _backupService = BackupService(DatabaseService());
+  final _backupService = BackupService();
 
   BackupInfo? _selectedBackup;   // 현재 선택된 파일
   List<BackupInfo> _foundFiles = []; // 자동 검색 결과
@@ -108,27 +108,47 @@ class _RestoreScreenState extends State<RestoreScreen> {
   //  복원 실행
   // ─────────────────────────────────────────────
   Future<void> _startRestore(BackupInfo backup) async {
+    // Step 1: 확인 다이얼로그
     final confirmed = await _showConfirmDialog(backup);
     if (!confirmed || !mounted) return;
 
+    // Step 2: PIN 입력 다이얼로그 (저장된 PIN 자동 사용 금지)
+    final pin = await _showPinDialog();
+    if (pin == null || !mounted) return;
+
     setState(() {
       _isRestoring = true;
-      _statusMessage = '복원 중입니다...\n잠시만 기다려주세요';
+      _statusMessage = '기억을 가져오는 중이에요...\n잠시만 기다려주세요';
     });
 
     try {
-      await _backupService.importBackup(backup.filePath, merge: false);
+      await _backupService.importBackupWithPin(backup.filePath, pin);
 
       if (mounted) await context.read<AppState>().loadData();
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ 복원이 완료됐어요!'),
-          backgroundColor: Color(0xFF4CAF50),
-          duration: Duration(seconds: 3),
-        ),
-      );
+      // 레거시 파일이면 재백업 권고 메시지
+      if (backup.isLegacy) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '✅ 내 기억을 가져왔어요!\n⚠️ 구버전 파일이에요. 보안을 위해 다시 보관해 두세요.',
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+            backgroundColor: Color(0xFFF57C00),
+            duration: Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ 내 기억을 가져왔어요!'),
+            backgroundColor: Color(0xFF4CAF50),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -136,8 +156,105 @@ class _RestoreScreenState extends State<RestoreScreen> {
         _isRestoring = false;
         _statusMessage = '';
       });
-      _showError('복원 중 오류가 발생했어요.\n$e');
+      // PIN 오류와 기타 오류 구분
+      final msg = e.toString().contains('PIN이 올바르지 않거나')
+          ? 'PIN이 올바르지 않거나\n백업 파일이 손상되었습니다.'
+          : '복원 중 오류가 발생했어요.\n$e';
+      _showError(msg);
     }
+  }
+
+  // ─────────────────────────────────────────────
+  //  PIN 입력 다이얼로그
+  // ─────────────────────────────────────────────
+  Future<String?> _showPinDialog() async {
+    String pinInput = '';
+    bool obscure = true;
+
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('🔐 PIN 입력',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '기억 보관 시 사용한\nPIN 4자리를 입력해주세요.',
+                  style: TextStyle(
+                      fontSize: 15,
+                      color: AppTheme.textSecondary,
+                      height: 1.5),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  obscureText: obscure,
+                  maxLength: 4,
+                  style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 8),
+                  textAlign: TextAlign.center,
+                  onChanged: (v) => pinInput = v,
+                  decoration: InputDecoration(
+                    hintText: '● ● ● ●',
+                    hintStyle: TextStyle(
+                        color: Colors.grey.shade400,
+                        letterSpacing: 6,
+                        fontSize: 18),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                          color: AppTheme.primaryColor, width: 2),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                          obscure ? Icons.visibility_off : Icons.visibility,
+                          color: AppTheme.textSecondary),
+                      onPressed: () =>
+                          setDialogState(() => obscure = !obscure),
+                    ),
+                    counterText: '',
+                  ),
+                ),
+              ],
+            ),  // Column
+          ),    // SingleChildScrollView
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.pop(ctx2, null),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                if (pinInput.length == 4) Navigator.pop(ctx2, pinInput);
+              },
+              child: const Text('확인',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -149,7 +266,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
           builder: (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20)),
-            title: const Text('복원하시겠어요?',
+            title: const Text('기억을 가져올까요?',
                 style: TextStyle(fontWeight: FontWeight.w800)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -159,7 +276,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                 const SizedBox(height: 6),
                 _infoRow('📝', '메모', '${backup.memoCount}개'),
                 const SizedBox(height: 6),
-                _infoRow('🕐', '백업 날짜', backup.dateStr),
+                _infoRow('🕐', '보관 날짜', backup.dateStr),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -174,7 +291,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '현재 저장된 데이터가\n모두 백업 파일로 교체됩니다.',
+                          '현재 저장된 데이터가\n보관 파일로 교체됩니다.',
                           style: TextStyle(
                             fontSize: 15,
                             color: Color(0xFFD32F2F),
@@ -199,7 +316,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('복원하기'),
+                child: const Text('가져오기'),
               ),
             ],
           ),
@@ -252,7 +369,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('백업 파일 복원',
+        title: const Text('내 기억 가져오기',
             style: TextStyle(fontWeight: FontWeight.w800)),
         backgroundColor: Colors.white,
         foregroundColor: AppTheme.primaryColor,
@@ -300,7 +417,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
           //  카카오톡에서 받은 파일 (자동 인식)
           // ══════════════════════════════════════
           if (_selectedBackup != null) ...[
-            _sectionHeader('📲', '받은 백업 파일'),
+            _sectionHeader('📲', '받은 기억 파일'),
             const SizedBox(height: 12),
             _buildBackupCard(_selectedBackup!, highlight: true),
             const SizedBox(height: 32),
@@ -309,7 +426,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
           // ══════════════════════════════════════
           //  직접 파일 선택 버튼 (가장 중요!)
           // ══════════════════════════════════════
-          _sectionHeader('📁', '파일 선택으로 복원'),
+          _sectionHeader('📁', '파일 선택으로 가져오기'),
           const SizedBox(height: 12),
 
           // 안내 박스
@@ -325,7 +442,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '💡 카카오톡에서 백업 파일을 받으셨나요?',
+                  '💡 카카오톡에서 파일을 받으셨나요?',
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -363,7 +480,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                 Text('📂', style: TextStyle(fontSize: 26)),
                 SizedBox(width: 10),
                 Text(
-                  '백업 파일 선택하기',
+                  '내 기억 파일 선택하기',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -478,18 +595,43 @@ class _RestoreScreenState extends State<RestoreScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 파일명 + 크기
+            // 파일명 + 크기 + 레거시 배지
             Row(
               children: [
                 const Text('💾', style: TextStyle(fontSize: 22)),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    info.fileName,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        info.fileName,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (info.isLegacy) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: const Color(0xFFF57C00), width: 1),
+                          ),
+                          child: const Text(
+                            '⚠️ 구버전 파일',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFF57C00)),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 Container(
@@ -542,7 +684,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                   elevation: 0,
                 ),
                 child: const Text(
-                  '이 파일로 복원하기',
+                  '이 파일로 가져오기',
                   style: TextStyle(
                       fontSize: 17, fontWeight: FontWeight.w800),
                 ),

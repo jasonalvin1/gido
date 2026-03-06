@@ -26,6 +26,8 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
     return fieldName.contains('전화') || fieldName.contains('연락처') || fieldName.contains('핸드폰');
   }
 
+
+
   // 전화 걸기
   Future<void> _makeCall(String number) async {
     final cleaned = number.replaceAll(RegExp(r'[^0-9+]'), '');
@@ -426,6 +428,7 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
                         ],
                       ],
                     ),
+
                   ],
                 ),
               );

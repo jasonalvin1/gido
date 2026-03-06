@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/memo_model.dart';
 import '../services/app_state.dart';
@@ -9,6 +10,7 @@ import 'memo_list_screen.dart';
 import 'memo_detail_screen.dart';
 import 'add_category_screen.dart';
 import 'lock_screen.dart';
+import 'restore_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,8 +33,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<AppState>().loadData();
+      // .gido 파일로 앱이 열렸으면 따뜻한 확인 다이얼로그
+      if (mounted && pendingGidoFilePath != null) {
+        final filePath = pendingGidoFilePath!;
+        pendingGidoFilePath = null;
+        await _showGidoFileDialog(filePath);
+      }
     });
   }
 
@@ -54,9 +62,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           MaterialPageRoute(builder: (_) => const LockScreen()),
               (route) => false,
         );
+      } else {
+        _pausedAt = null;
+        // 앱이 실행 중일 때 .gido 파일 탭 → onNewIntent 경유
+        _checkNewFileIntent();
       }
-      _pausedAt = null;
     }
+  }
+
+  // 앱 재개 시 새 .gido 인텐트 확인 (onNewIntent 케이스)
+  Future<void> _checkNewFileIntent() async {
+    try {
+      const channel = MethodChannel('com.gido.gido/file_handler');
+      final path = await channel.invokeMethod<String>('getInitialFilePath');
+      if (path != null && mounted) {
+        await channel.invokeMethod<void>('clearFilePath');
+        await _showGidoFileDialog(path);
+      }
+    } catch (_) {}
   }
 
   Future<void> _search(String query) async {
@@ -143,10 +166,108 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return RichText(text: TextSpan(children: spans));
   }
 
-  // 백업
+  // .gido 파일로 앱이 열렸을 때 따뜻한 확인 다이얼로그
+  Future<void> _showGidoFileDialog(String filePath) async {
+    // 백업 정보 읽기
+    final info = await _backupService.getBackupInfo(filePath);
+    if (!mounted) return;
+
+    final goRestore = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('📦 저장된 기억을 찾았어요!',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 백업 정보 카드
+            if (info != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F4FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📦 ${info.categoryCount}개 카테고리'
+                      '  📝 ${info.memoCount}개 메모',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '🕐 ${info.dateStr}',
+                      style: const TextStyle(
+                          fontSize: 13, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 16),
+            const Text(
+              '지금 기억을 가져올까요?',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '현재 저장된 데이터가 보관 파일로 교체돼요.',
+              style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textSecondary,
+                  height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFE0E0E0), width: 2),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('나중에',
+                style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 12),
+            ),
+            child: const Text('가져오기',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+
+    if (goRestore == true && mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RestoreScreen(initialFilePath: filePath),
+        ),
+      );
+    }
+  }
+
+  // 내 기억 보관하기
   Future<void> _handleBackup(BuildContext context) async {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('백업 파일 생성 중...', style: TextStyle(fontSize: 16))),
+      const SnackBar(content: Text('내 기억 보관 파일 만드는 중...', style: TextStyle(fontSize: 16))),
     );
     final success = await _backupService.createBackup(context);
     if (!mounted) return;
@@ -155,33 +276,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context: context,
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('💾 백업 완료!',
+          title: const Text('💾 내 기억 보관 완료!',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               textAlign: TextAlign.center),
           content: const Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('백업 파일을 안전하게 보관하세요.',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              Text('공유 화면에서 카카오톡을 선택해\n나와의 채팅에 보내두세요.',
+                  style: TextStyle(fontSize: 16, height: 1.5)),
               SizedBox(height: 16),
-              Text('📌 저장 방법 2가지',
+              Text('💡 나중에 가져오려면',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              SizedBox(height: 10),
-              Text('1️⃣ 카카오톡 저장',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              Text('공유시트에서 카카오톡 선택\n→ 나와의 채팅으로 전송',
-                  style: TextStyle(fontSize: 14, height: 1.5)),
-              SizedBox(height: 10),
-              Text('2️⃣ 구글 드라이브 저장',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              Text('공유시트에서 드라이브 선택\n→ 내 드라이브에 저장',
-                  style: TextStyle(fontSize: 14, height: 1.5)),
-              SizedBox(height: 16),
-              Text('💡 복원 방법',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              Text('저장한 파일을 내 파일앱에 저장 후\n메뉴 > 복원에서 파일 선택',
-                  style: TextStyle(fontSize: 14, height: 1.5)),
+              SizedBox(height: 6),
+              Text('메뉴 > 내 기억 가져오기에서\n파일을 선택하면 돼요.',
+                  style: TextStyle(fontSize: 14, height: 1.5, color: AppTheme.textSecondary)),
             ],
           ),
           actionsAlignment: MainAxisAlignment.center,
@@ -196,22 +305,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('백업 실패. 다시 시도해주세요', style: TextStyle(fontSize: 16))),
+        const SnackBar(content: Text('보관 실패. 다시 시도해주세요', style: TextStyle(fontSize: 16))),
       );
     }
   }
 
-  // 복원
+  // 내 기억 가져오기
   Future<void> _handleRestore(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('📂 백업 복원',
+        title: const Text('📂 내 기억 가져오기',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             textAlign: TextAlign.center),
         content: const Text(
-          '복원하면 기존 데이터에 백업 데이터가 추가돼요.\n계속하시겠어요?',
+          '보관한 파일에서 기억을 가져와요.\n계속하시겠어요?',
           style: TextStyle(fontSize: 16),
           textAlign: TextAlign.center,
         ),
@@ -248,14 +357,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await context.read<AppState>().loadData();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('복원 완료! ✅', style: TextStyle(fontSize: 16)),
+          content: Text('내 기억을 가져왔어요! ✅', style: TextStyle(fontSize: 16)),
           behavior: SnackBarBehavior.floating,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('복원 실패. 백업 파일을 확인해주세요', style: TextStyle(fontSize: 16)),
+          content: Text('가져오기 실패. 파일을 확인해주세요', style: TextStyle(fontSize: 16)),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -271,8 +380,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       {'icon': '🔍', 'title': '검색', 'desc': '상단 검색창에서 바로 실시간 검색'},
       {'icon': '✏️', 'title': '직접입력', 'desc': '카테고리 추가 시 이모지 자유 설정'},
       {'icon': '🔃', 'title': '순서 변경', 'desc': '카테고리 ⋮ 메뉴에서 위/아래 이동'},
-      {'icon': '💾', 'title': '백업', 'desc': '메뉴 > 백업 → 카카오톡/구글드라이브에 저장'},
-      {'icon': '📂', 'title': '복원', 'desc': '저장한 파일을 내 파일앱에 저장 후 메뉴 > 복원'},
+      {'icon': '💾', 'title': '내 기억 보관하기', 'desc': '메뉴 > 보관하기 → 카카오톡 나와의 채팅에 전송'},
+      {'icon': '📂', 'title': '내 기억 가져오기', 'desc': '메뉴 > 가져오기 → 보관한 파일 선택'},
       {'icon': '🌙', 'title': '다크모드', 'desc': '메뉴에서 테마 전환'},
     ];
     showDialog(
@@ -485,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Row(children: [
                   Text('💾', style: TextStyle(fontSize: 20)),
                   SizedBox(width: 12),
-                  Text('백업', style: TextStyle(fontSize: 16)),
+                  Text('내 기억 보관하기', style: TextStyle(fontSize: 16)),
                 ]),
               ),
               const PopupMenuItem(
@@ -493,7 +602,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Row(children: [
                   Text('📂', style: TextStyle(fontSize: 20)),
                   SizedBox(width: 12),
-                  Text('복원', style: TextStyle(fontSize: 16)),
+                  Text('내 기억 가져오기', style: TextStyle(fontSize: 16)),
                 ]),
               ),
               const PopupMenuDivider(),
@@ -784,7 +893,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         },
         onLongPress: () => _showCategoryOptionsDialog(context, cat, count, isFirst, isLast),
         child: Container(
-          height: 88,
+          constraints: const BoxConstraints(minHeight: 88),
           decoration: BoxDecoration(
             color: isDark ? AppTheme.darkCard : Colors.white,
             borderRadius: BorderRadius.circular(18),
@@ -797,61 +906,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  color: color.withAlpha(isDark ? 40 : 20),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    bottomLeft: Radius.circular(16),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 88,
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(isDark ? 40 : 20),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                    ),
+                  ),
+                  child: Center(
+                    child: CategoryIcon(icon: cat.icon, size: 64),
                   ),
                 ),
-                child: Center(
-                  child: CategoryIcon(icon: cat.icon, size: 64),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      cat.name,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cat.name,
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$count개 메모',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? AppTheme.darkTextSecondary : AppTheme.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '$count개 메모',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? AppTheme.darkTextSecondary : AppTheme.textSecondary,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => _showCategoryOptionsDialog(context, cat, count, isFirst, isLast),
+                  child: Container(
+                    width: 40,
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.only(
+                        topRight: Radius.circular(16),
+                        bottomRight: Radius.circular(16),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              GestureDetector(
-                onTap: () => _showCategoryOptionsDialog(context, cat, count, isFirst, isLast),
-                child: Container(
-                  width: 40,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    borderRadius: BorderRadius.only(
-                      topRight: Radius.circular(16),
-                      bottomRight: Radius.circular(16),
-                    ),
+                    child: Icon(Icons.more_vert, size: 20,
+                        color: isDark ? AppTheme.darkTextSecondary : AppTheme.textSecondary),
                   ),
-                  child: Icon(Icons.more_vert, size: 20,
-                      color: isDark ? AppTheme.darkTextSecondary : AppTheme.textSecondary),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

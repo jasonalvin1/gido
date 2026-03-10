@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../utils/app_theme.dart';
+import '../main.dart' show pendingGidoFilePath;
 import 'home_screen.dart';
 
 class LockScreen extends StatefulWidget {
@@ -205,6 +206,35 @@ class _LockScreenState extends State<LockScreen>
         child: SafeArea(
           child: Column(
             children: [
+              // 백업 파일로 앱이 열렸을 때 힌트 배너
+              if (pendingGidoFilePath != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(30),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withAlpha(60)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Text('📦', style: TextStyle(fontSize: 22)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '백업 파일을 찾았어요!\nPIN을 입력하면 바로 가져올 수 있어요.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white,
+                            height: 1.4,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               const Spacer(flex: 2),
               Image.asset('assets/icons/prayer.png', width: 72, height: 72),
               const SizedBox(height: 12),

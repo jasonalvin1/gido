@@ -42,6 +42,29 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
   bool get _isEditing => widget.memo != null;
   Color get _catColor => AppTheme.hexToColor(widget.category.color);
 
+  // 추가 정보 섹션 펼침 여부
+  bool _showExtra = false;
+
+  // 카테고리별 우선 표시 필드 (최대 2~3개)
+  static const _primaryFieldMap = {
+    'bank':     ['은행명', '비밀번호'],
+    'site':     ['사이트명', '비밀번호'],
+    'birthday': ['이름', '날짜'],
+    'church':   ['모임명', '요일/시간'],
+    'todo':     ['할일', '마감일'],
+  };
+
+  List<String> _primaryFields() {
+    final primary = _primaryFieldMap[widget.category.id];
+    if (primary == null) return widget.category.fields; // 커스텀 카테고리: 전체 표시
+    return widget.category.fields.where((f) => primary.contains(f)).toList();
+  }
+
+  List<String> _secondaryFields() {
+    final primary = _primaryFields();
+    return widget.category.fields.where((f) => !primary.contains(f)).toList();
+  }
+
   String _eul(String word) {
     if (word.isEmpty) return '$word을(를)';
     final last = word.runes.last;
@@ -193,6 +216,13 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
         }
       }
     }
+    // 수정 모드: secondary 필드에 값이 있으면 자동 펼침
+    if (_isEditing) {
+      _showExtra = _secondaryFields().any(
+        (f) => (widget.memo?.data[f] ?? '').isNotEmpty,
+      );
+    }
+
     // 음성 인식 초기화 (비동기, 실패해도 앱 동작 영향 없음)
     _initSpeech();
   }
@@ -481,36 +511,46 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
     if (_isSaving) return;
     setState(() => _isSaving = true);
 
-    final data = <String, String>{};
-    for (final entry in _fieldControllers.entries) {
-      data[entry.key] = entry.value.text.trim();
-    }
-
-    final title = data.values.firstWhere((v) => v.isNotEmpty, orElse: () => '새 메모');
-    final appState = context.read<AppState>();
-
-    if (_isEditing) {
-      final updatedMemo = widget.memo!;
-      updatedMemo.title = title;
-      updatedMemo.data = data;
-      await appState.updateMemo(updatedMemo);
-      if (mounted) {
-        final alarmMsg = _alarmConfirmMessage();
-        _showSnackbar(alarmMsg.isNotEmpty ? alarmMsg : '저장했어요! ✅');
-        Navigator.pop(context, updatedMemo);
+    try {
+      final data = <String, String>{};
+      for (final entry in _fieldControllers.entries) {
+        data[entry.key] = entry.value.text.trim();
       }
-    } else {
-      final newMemo = Memo(
-        categoryId: widget.category.id,
-        title: title,
-        data: data,
-      );
-      await appState.addMemo(newMemo);
-      if (mounted) {
-        final alarmMsg = _alarmConfirmMessage();
-        _showSnackbar(alarmMsg.isNotEmpty ? alarmMsg : '새 메모를 저장했어요! ✅');
-        Navigator.pop(context, newMemo);
+
+      final title = data.values.firstWhere((v) => v.isNotEmpty, orElse: () => '새 메모');
+      final appState = context.read<AppState>();
+
+      if (_isEditing) {
+        final updatedMemo = widget.memo!;
+        updatedMemo.title = title;
+        updatedMemo.data = data;
+        await appState.updateMemo(updatedMemo);
+        if (mounted) {
+          final alarmMsg = _alarmConfirmMessage();
+          _showSnackbar(alarmMsg.isNotEmpty ? alarmMsg : '저장했어요! ✅');
+          Navigator.pop(context, updatedMemo);
+        }
+      } else {
+        final newMemo = Memo(
+          categoryId: widget.category.id,
+          title: title,
+          data: data,
+        );
+        await appState.addMemo(newMemo);
+        if (mounted) {
+          final alarmMsg = _alarmConfirmMessage();
+          _showSnackbar(alarmMsg.isNotEmpty ? alarmMsg : '새 메모를 저장했어요! ✅');
+          Navigator.pop(context, newMemo);
+        }
       }
+    } catch (e) {
+      debugPrint('⚠️ _save 오류: $e');
+      if (mounted) {
+        _showSnackbar('저장 중 오류가 발생했어요. 다시 시도해 주세요 😥');
+      }
+    } finally {
+      // 예외 발생 여부와 상관없이 반드시 저장 상태 해제
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -527,7 +567,13 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final primary = _primaryFields();
+    final secondary = _secondaryFields();
+    final hasHiddenValues = !_showExtra &&
+        secondary.any((f) => (widget.memo?.data[f] ?? _fieldControllers[f]?.text ?? '').isNotEmpty);
+
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(_isEditing ? '메모 수정' : '새 메모'),
         leading: IconButton(
@@ -535,60 +581,99 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isSaving ? null : _save,
+        backgroundColor: _isSaving ? Colors.grey[400] : _catColor,
+        elevation: 6,
+        icon: const Icon(Icons.check_rounded, size: 28, color: Colors.white),
+        label: Text(
+          _isSaving
+              ? '저장 중...'
+              : (_isEditing ? '수정 완료' : '저장하기'),
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 필드를 index와 함께 순회하여 첫 번째 필드 뒤에 중복 배너 삽입
-            for (int i = 0; i < widget.category.fields.length; i++) ...[
-              _buildFieldWidget(widget.category.fields[i]),
-
-              // ▼ 첫 번째 필드 바로 아래: 유사 메모 경고 배너
+            // ── 주요 필드 ──────────────────────────────────────────────
+            for (int i = 0; i < primary.length; i++) ...[
+              _buildFieldWidget(primary[i]),
+              // 첫 번째 필드 바로 아래: 유사 메모 경고 배너
               if (i == 0 && _similarMemos.isNotEmpty)
                 _buildDuplicateBanner(),
             ],
 
-            const SizedBox(height: 8),
-
-            SizedBox(
-              width: double.infinity,
-              height: AppTheme.minTouchTarget,
-              child: ElevatedButton.icon(
-                onPressed: _isSaving ? null : _save,
-                icon: Image.asset('assets/icons/save.png', width: 28, height: 28),
-                label: Text(_isSaving ? '저장 중...' : '저장하기'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _catColor,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            SizedBox(
-              width: double.infinity,
-              height: AppTheme.minTouchTarget,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFE0E0E0), width: 2),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+            // ── 추가 정보 토글 (secondary 필드가 있을 때만) ────────────
+            if (secondary.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => setState(() => _showExtra = !_showExtra),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: _showExtra
+                        ? _catColor.withOpacity(0.08)
+                        : (Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF2C2C2E)
+                            : const Color(0xFFF5F5F5)),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _showExtra
+                          ? _catColor.withOpacity(0.4)
+                          : (Theme.of(context).brightness == Brightness.dark
+                              ? Colors.grey[700]!
+                              : const Color(0xFFE0E0E0)),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _showExtra
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: _catColor,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _showExtra ? '추가 정보 접기' : '추가 정보 입력하기',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: _catColor,
+                        ),
+                      ),
+                      // 숨겨진 값이 있을 때 알림 점
+                      if (hasHiddenValues) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.orange[600],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                child: const Text(
-                  '취소',
-                  style: TextStyle(
-                    fontSize: AppTheme.fontSizeMedium,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
               ),
-            ),
+              const SizedBox(height: 16),
 
-            const SizedBox(height: 40),
+              // ── secondary 필드 (펼쳤을 때) ──────────────────────────
+              if (_showExtra)
+                for (final field in secondary) _buildFieldWidget(field),
+            ],
           ],
         ),
       ),

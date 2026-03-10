@@ -46,64 +46,114 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
   Color get _catColor => AppTheme.hexToColor(widget.category.color);
 
   void _showDeleteDialog() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        contentPadding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('🗑️', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 12),
-            const Text(
-              '정말 지울까요?',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '"${_memo.title}" 메모를 삭제합니다',
-              style: const TextStyle(fontSize: 18, color: AppTheme.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              '아니요, 취소',
-              style: TextStyle(fontSize: AppTheme.fontSizeMedium),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              await context.read<AppState>().deleteMemo(_memo);
-              if (mounted) {
-                // ScaffoldMessenger를 Navigator.pop 전에 미리 캡처
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.pop(ctx); // close dialog
-                Navigator.pop(context); // back to list
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: const Text('삭제했어요 🗑️', style: TextStyle(fontSize: 18)),
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    duration: const Duration(seconds: 2),
+      useRootNavigator: true,
+      isDismissible: true,
+      enableDrag: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF1C1C1E)
+          : Colors.white,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 핸들 바
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text('🗑️', style: TextStyle(fontSize: 52)),
+              const SizedBox(height: 14),
+              const Text(
+                '정말 지울까요?',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '"${_memo.title}" 메모를 삭제합니다',
+                style: const TextStyle(fontSize: 18, color: AppTheme.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              // 삭제 버튼 (FAB 스타일 - 풀 너비)
+              SizedBox(
+                width: double.infinity,
+                height: 64,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await context.read<AppState>().deleteMemo(_memo);
+                    if (mounted) {
+                      final messenger = ScaffoldMessenger.of(context);
+                      Navigator.pop(ctx); // close sheet
+                      Navigator.pop(context); // back to list
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: const Text('삭제했어요 🗑️', style: TextStyle(fontSize: 18)),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.delete_rounded, size: 26, color: Colors.white),
+                  label: const Text(
+                    '네, 삭제할게요',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.dangerColor,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text(
-              '네, 삭제할게요',
-              style: TextStyle(fontSize: AppTheme.fontSizeMedium),
-            ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.dangerColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // 취소 버튼 (풀 너비)
+              SizedBox(
+                width: double.infinity,
+                height: 58,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[600]!
+                          : const Color(0xFFDDDDDD),
+                      width: 1.5,
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  ),
+                  child: Text(
+                    '아니요, 취소',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[300]
+                          : const Color(0xFF555555),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -286,7 +336,8 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
       appBar: AppBar(
         title: Text(
           _memo.title,
-          style: const TextStyle(fontSize: 22),
+          style: const TextStyle(fontSize: 18),
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         leading: IconButton(

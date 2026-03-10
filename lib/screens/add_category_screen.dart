@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/memo_model.dart';
 import '../services/app_state.dart';
@@ -24,7 +25,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     {'icon': 'assets/icons/site.png', 'label': '사이트/앱'},
     {'icon': 'assets/icons/bank.png', 'label': '은행/계좌'},
     {'icon': 'assets/icons/birthday.png', 'label': '생일/기념일'},
-    {'icon': 'assets/icons/church.png', 'label': '교회/모임'},
+    {'icon': 'assets/icons/church.png', 'label': '약속/모임'},
     {'icon': 'assets/icons/todo.png', 'label': '할일'},
   ];
 
@@ -108,7 +109,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       '사이트/앱': ['사이트명', '아이디', '비밀번호', '웹주소', '메모'],
       '은행/계좌': ['은행명', '계좌번호', '비밀번호', '메모'],
       '생일/기념일': ['이름', '날짜', '관계', '메모'],
-      '교회/모임': ['모임명', '요일/시간', '장소', '담당자', '전화번호', '메모'],
+      '약속/모임': ['모임명', '요일/시간', '장소', '담당자', '전화번호', '메모'],
       '할일': ['할일', '마감일', '메모'],
     };
 
@@ -203,9 +204,25 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('새 카테고리 만들기'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFF6B35), Color(0xFFFFB88C)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          '새 카테고리 만들기',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, size: 28),
+          icon: const Icon(Icons.arrow_back, size: 28, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
       ),

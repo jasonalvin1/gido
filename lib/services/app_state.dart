@@ -37,6 +37,7 @@ class AppState extends ChangeNotifier {
       title: '할 일이 있어요!',
       body: '$timeStr 기억도우미에서 할 일을 확인해보세요',
       scheduledTime: alarmTime,
+      payload: memo.id,  // 알림 탭 시 해당 메모로 이동하기 위한 ID
     );
   }
 
@@ -84,6 +85,18 @@ class AppState extends ChangeNotifier {
 
   Future<List<Memo>> loadMemosByCategory(String categoryId) async {
     return await _db.getMemosByCategory(categoryId);
+  }
+
+  /// 알림 탭 딥링크용: 메모 ID로 메모와 카테고리 동시 조회
+  Future<({Memo memo, Category category})?> getMemoAndCategoryById(String memoId) async {
+    final memo = await _db.getMemoById(memoId);
+    if (memo == null) return null;
+    try {
+      final category = _categories.firstWhere((c) => c.id == memo.categoryId);
+      return (memo: memo, category: category);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<Memo>> searchMemos(String query) async {

@@ -297,6 +297,23 @@ class BackupService {
       await _db.updateCategoryIcon(e.key, e.value);
     }
 
+    // 구버전 백업 카테고리 이름 마이그레이션 (교회/모임 → 약속/모임)
+    final allCats = await _db.getCategories();
+    for (final cat in allCats) {
+      if (cat.id == 'church' && cat.name == '교회/모임') {
+        await _db.updateCategory(Category(
+          id: cat.id,
+          name: '약속/모임',
+          icon: cat.icon,
+          color: cat.color,
+          fields: cat.fields,
+          isDefault: cat.isDefault,
+          sortOrder: cat.sortOrder,
+        ));
+        break;
+      }
+    }
+
     // 메모 복원
     for (final raw in memosData) {
       final map = Map<String, dynamic>.from(raw as Map);
@@ -331,7 +348,8 @@ class BackupService {
     try {
       final file = File(filePath);
       if (!await file.exists()) return null;
-      if (!filePath.toLowerCase().endsWith('.gido')) return null;
+      // 확장자 체크 제거 - 구글 드라이브 등 클라우드에서 받으면 확장자 없을 수 있음
+      // 대신 파일 내용으로 유효성 검사
 
       final raw = await file.readAsString();
       final fileSize = await file.length();
@@ -430,25 +448,38 @@ class BackupService {
 
   Future<List<BackupInfo>> findGidoFiles() async {
     final result = <BackupInfo>[];
-    try {
-      final downloadPaths = [
-        '/storage/emulated/0/Download',
-        '/storage/emulated/0/Downloads',
-      ];
-      for (final dirPath in downloadPaths) {
+    final seen = <String>{};  // 중복 방지
+
+    // 앱별 주요 저장 경로 (카카오톡, WhatsApp, 기본 다운로드 등)
+    final searchPaths = [
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Downloads',
+      '/storage/emulated/0/KakaoTalk/Recv',          // 카카오톡 받은 파일
+      '/storage/emulated/0/KakaoTalk/Talk',           // 카카오톡 내게보내기
+      '/storage/emulated/0/WhatsApp/Media/WhatsApp Documents', // WhatsApp
+      '/storage/emulated/0/Telegram',                 // 텔레그램
+    ];
+
+    for (final dirPath in searchPaths) {
+      try {
         final dir = Directory(dirPath);
         if (!await dir.exists()) continue;
-        await for (final entity in dir.list()) {
+        await for (final entity in dir.list(recursive: true)) {
           if (entity is File &&
-              entity.path.toLowerCase().endsWith('.gido')) {
+              entity.path.toLowerCase().endsWith('.gido') &&
+              !seen.contains(entity.path)) {
+            seen.add(entity.path);
             final info = await getBackupInfo(entity.path);
             if (info != null) result.add(info);
           }
         }
+      } catch (e) {
+        debugPrint('검색 오류 ($dirPath): $e');
       }
-    } catch (e) {
-      debugPrint('자동 검색 오류: $e');
     }
+
+    // 최신 파일 순 정렬
+    result.sort((a, b) => b.dateStr.compareTo(a.dateStr));
     return result;
   }
 

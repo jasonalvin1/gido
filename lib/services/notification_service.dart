@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
@@ -11,6 +12,9 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
+  /// 알림 탭으로 진입 시 이동할 메모 ID (HomeScreen에서 읽고 null 처리)
+  static String? pendingMemoId;
+
   /// 앱 시작 시 한 번만 호출
   Future<void> initialize() async {
     if (_initialized) return;
@@ -23,7 +27,25 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
 
-    await _plugin.initialize(initSettings);
+    await _plugin.initialize(
+      initSettings,
+      // 앱 실행 중 알림 탭 (warm start)
+      onDidReceiveNotificationResponse: (details) {
+        final payload = details.payload;
+        if (payload != null && payload.isNotEmpty) {
+          NotificationService.pendingMemoId = payload;
+        }
+      },
+    );
+
+    // 알림으로 앱이 시작된 경우 (cold start)
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      final payload = launchDetails?.notificationResponse?.payload;
+      if (payload != null && payload.isNotEmpty) {
+        NotificationService.pendingMemoId = payload;
+      }
+    }
 
     // Android 알림 채널 생성
     const channel = AndroidNotificationChannel(
@@ -51,12 +73,25 @@ class NotificationService {
     return granted ?? false;
   }
 
+  /// 정확한 알람 예약 권한 확인 (Samsung 등 배터리 최적화 기기 대응)
+  Future<bool> _canUseExactAlarm() async {
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      return await android?.canScheduleExactNotifications() ?? true;
+    } catch (_) {
+      return true; // 확인 실패 시 일단 시도
+    }
+  }
+
   /// 특정 시각에 알림 예약 (v17 API)
+  /// Samsung One UI 배터리 최적화로 exactAllowWhileIdle이 거부될 경우 inexact로 폴백
   Future<void> scheduleNotification({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledTime,
+    String? payload,  // 탭 시 이동할 메모 ID
   }) async {
     if (!_initialized) await initialize();
 
@@ -64,6 +99,14 @@ class NotificationService {
     if (scheduledTime.isBefore(DateTime.now())) return;
 
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
+
+    // 정확한 알람 권한 확인 → Samsung 배터리 최적화 대응
+    final canExact = await _canUseExactAlarm();
+    final scheduleMode = canExact
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexact;
+
+    debugPrint('🔔 알람 예약: $scheduleMode / ${scheduledTime.toString()}');
 
     await _plugin.zonedSchedule(
       id,
@@ -80,9 +123,10 @@ class NotificationService {
           icon: '@mipmap/ic_launcher',
         ),
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: scheduleMode,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+      payload: payload,
     );
   }
 

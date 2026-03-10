@@ -111,7 +111,7 @@ class Category {
       ),
       Category(
         id: 'church',
-        name: '교회/모임',
+        name: '약속/모임',
         icon: 'assets/icons/church.png',
         color: '#9C27B0',
         fields: ['모임명', '요일/시간', '장소', '담당자', '전화번호', '메모'],

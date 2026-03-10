@@ -20,7 +20,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
       // ─────────────────────────────────────────────────────────────────
@@ -133,9 +133,28 @@ class DatabaseService {
         }
       }
 
+      // v3 → v4: church 카테고리 이름 → '약속/모임' 으로 변경
+      if (oldVersion < 4) {
+        await txn.update(
+          'categories',
+          {'name': '약속/모임'},
+          where: 'id = ?',
+          whereArgs: ['church'],
+        );
+      }
+
+      // v4 → v5: church 카테고리 이름 재적용 (v4에서 조건 실패 케이스 보완)
+      if (oldVersion < 5) {
+        await txn.update(
+          'categories',
+          {'name': '약속/모임'},
+          where: 'id = ?',
+          whereArgs: ['church'],
+        );
+      }
+
       // ── 향후 버전 마이그레이션은 여기에 추가 ──
-      // if (oldVersion < 4) { ... }
-      // if (oldVersion < 5) { ... }
+      // if (oldVersion < 6) { ... }
     });
   }
 
@@ -211,6 +230,28 @@ class DatabaseService {
       memos.add(Memo.fromMap(memoMap, fieldData));
     }
     return memos;
+  }
+
+  Future<Memo?> getMemoById(String memoId) async {
+    final db = await database;
+    final memoMaps = await db.query(
+      'memos',
+      where: 'id = ?',
+      whereArgs: [memoId],
+      limit: 1,
+    );
+    if (memoMaps.isEmpty) return null;
+    final memoMap = memoMaps.first;
+    final fieldMaps = await db.query(
+      'memo_fields',
+      where: 'memoId = ?',
+      whereArgs: [memoMap['id']],
+    );
+    final fieldData = <String, String>{};
+    for (final f in fieldMaps) {
+      fieldData[f['fieldName'] as String] = f['fieldValue'] as String;
+    }
+    return Memo.fromMap(memoMap, fieldData);
   }
 
   Future<List<Memo>> getAllMemos() async {

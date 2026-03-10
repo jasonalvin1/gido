@@ -64,7 +64,53 @@ class _MemoListScreenState extends State<MemoListScreen> {
   }
 
   bool get _isTodoCategory => widget.category.id == 'todo';
+  bool get _isBirthdayCategory => widget.category.id == 'birthday';
   Color get _catColor => AppTheme.hexToColor(widget.category.color);
+
+  /// 날짜 문자열(예: "1963년 9월 4일")에서 올해 기념일 정보 계산
+  Map<String, dynamic> _getAnniversaryInfo(String dateStr) {
+    final regex = RegExp(r'(\d+)년\s*(\d+)월\s*(\d+)일');
+    final match = regex.firstMatch(dateStr);
+    if (match == null) return {'monthDay': dateStr, 'dDayLabel': '', 'isToday': false, 'labelColor': _catColor};
+
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var anniv = DateTime(now.year, month, day);
+
+    bool isNextYear = false;
+    if (anniv.isBefore(today)) {
+      anniv = DateTime(now.year + 1, month, day);
+      isNextYear = true;
+    }
+
+    final diff = anniv.difference(today).inDays;
+    String dDayLabel;
+    Color labelColor;
+
+    if (diff == 0) {
+      dDayLabel = '🎉 오늘!';
+      labelColor = const Color(0xFFE91E63);
+    } else if (diff <= 7) {
+      dDayLabel = 'D-$diff';
+      labelColor = Colors.orange;
+    } else if (diff <= 30) {
+      dDayLabel = 'D-$diff';
+      labelColor = _catColor;
+    } else {
+      dDayLabel = isNextYear ? '${now.year + 1}년' : 'D-$diff';
+      labelColor = const Color(0xFFAAAAAA);
+    }
+
+    return {
+      'monthDay': '$month월 $day일',
+      'dDayLabel': dDayLabel,
+      'isToday': diff == 0,
+      'labelColor': labelColor,
+    };
+  }
 
   void _showSortDialog() {
     showDialog(
@@ -254,6 +300,8 @@ class _MemoListScreenState extends State<MemoListScreen> {
   }
 
   Widget _buildMemoCard(Memo memo) {
+    if (_isBirthdayCategory) return _buildBirthdayCard(memo);
+
     return GestureDetector(
       onTap: () async {
         await Navigator.push(
@@ -313,6 +361,8 @@ class _MemoListScreenState extends State<MemoListScreen> {
                 children: [
                   Text(
                     memo.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -344,6 +394,106 @@ class _MemoListScreenState extends State<MemoListScreen> {
               ),
             ),
             const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 28),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 생일/기념일 전용 카드: 이름 + 올해 날짜 + D-day 강조
+  Widget _buildBirthdayCard(Memo memo) {
+    final name = (memo.data['이름'] ?? memo.title).toString();
+    final relation = (memo.data['관계'] ?? '').toString();
+    final dateStr = (memo.data['날짜'] ?? '').toString();
+    final info = _getAnniversaryInfo(dateStr);
+    final isToday = info['isToday'] as bool;
+    final labelColor = info['labelColor'] as Color;
+
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MemoDetailScreen(memo: memo, category: widget.category),
+          ),
+        );
+        _loadMemos();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          color: isToday ? const Color(0xFFFFF0F5) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border(
+            left: BorderSide(color: _catColor, width: 5),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // 왼쪽: 이름 + 관계
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: isToday ? _catColor : AppTheme.textPrimary,
+                    ),
+                  ),
+                  if (relation.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      relation,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // 오른쪽: 올해 날짜 + D-day 배지
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  info['monthDay'] as String,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: _catColor,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: labelColor.withOpacity(0.13),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    info['dDayLabel'] as String,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

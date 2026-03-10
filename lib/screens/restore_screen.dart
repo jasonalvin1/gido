@@ -69,26 +69,174 @@ class _RestoreScreenState extends State<RestoreScreen> {
   }
 
   // ─────────────────────────────────────────────
+  //  저장소 선택 바텀 시트
+  // ─────────────────────────────────────────────
+  Future<String?> _showSourcePicker() async {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          '어디서 가져올까요?',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _sourceOption(ctx, 'kakaotalk', '📱', '카카오톡',    '카카오톡 저장 폴더'),
+            _sourceOption(ctx, 'google',    '☁️', '구글 드라이브', '구글 드라이브에서 찾기'),
+            _sourceOption(ctx, 'whatsapp',  '💬', 'WhatsApp',    'WhatsApp 저장 폴더'),
+            _sourceOption(ctx, 'download',  '📥', '다운로드',    '기기 다운로드 폴더'),
+            _sourceOption(ctx, 'other',     '📂', '직접 찾기',   '파일 탐색기에서 선택'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sourceOption(BuildContext ctx, String key, String emoji,
+      String title, String subtitle) {
+    return InkWell(
+      onTap: () => Navigator.pop(ctx, key),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 24)),
+            const SizedBox(width: 14),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textSecondary)),
+              ],
+            ),
+            const Spacer(),
+            const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
   //  파일 직접 선택
   // ─────────────────────────────────────────────
   Future<void> _pickFile() async {
+    // 저장소 선택
+    final source = await _showSourcePicker();
+    if (source == null) return;
+
+    // 선택한 저장소에 따라 초기 디렉토리 결정
+    String? initialDir;
+    if (source == 'kakaotalk') {
+      // 카카오톡 파일은 다운로드/KakaoTalk 폴더에 저장됨
+      final paths = [
+        '/storage/emulated/0/Download/KakaoTalk',
+        '/storage/emulated/0/Downloads/KakaoTalk',
+        '/storage/emulated/0/KakaoTalk',
+      ];
+      for (final p in paths) {
+        if (await Directory(p).exists()) { initialDir = p; break; }
+      }
+      if (mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('📱 카카오톡에서 찾기',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            content: const Text(
+              '파일 선택 화면이 열리면\n\n'
+              '다운로드 → KakaoTalk 폴더에서\n'
+              '백업 파일을 선택해주세요!',
+              style: TextStyle(fontSize: 15, height: 1.6),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+    } else if (source == 'whatsapp') {
+      final d = Directory('/storage/emulated/0/WhatsApp');
+      initialDir = await d.exists() ? d.path : null;
+    } else if (source == 'download') {
+      final d = Directory('/storage/emulated/0/Download');
+      initialDir = await d.exists() ? d.path : null;
+    } else {
+      initialDir = null;
+      // 구글 드라이브 선택 시 → 먼저 안내 다이얼로그 표시
+      if (source == 'google' && mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('☁️ 구글 드라이브에서 찾기',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            content: const Text(
+              '파일 선택 화면이 열리면\n\n'
+              '구글 드라이브 → 내 드라이브\n'
+              '폴더에서 백업 파일을 선택해주세요!',
+              style: TextStyle(fontSize: 15, height: 1.6),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+    }
+
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,   // .gido는 커스텀 확장자라 any로 받아야 합니다
-        dialogTitle: '백업 파일(.gido) 선택',
+        type: FileType.any,
+        dialogTitle: '백업 파일 선택 (.gido)',
         allowMultiple: false,
+        initialDirectory: initialDir,
       );
 
       if (result == null || result.files.single.path == null) return;
 
       final path = result.files.single.path!;
 
-      // 확장자 체크
-      if (!path.toLowerCase().endsWith('.gido')) {
-        _showError('.gido 파일만 복원할 수 있어요.\n선택한 파일: ${path.split('/').last}');
-        return;
-      }
-
+      // 파일 내용으로 유효성 검사 (확장자 없어도 OK - 구글 드라이브 등)
       final info = await _backupService.getBackupInfo(path);
       if (!mounted) return;
 
@@ -442,7 +590,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '💡 카카오톡에서 파일을 받으셨나요?',
+                  '💡 어디에 저장했는지 선택해 주세요',
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -450,8 +598,8 @@ class _RestoreScreenState extends State<RestoreScreen> {
                 ),
                 SizedBox(height: 6),
                 Text(
-                  '카카오톡 → 파일 꾹 누르기 → "내 파일에 저장"\n'
-                  '→ 아래 버튼을 눌러 저장된 파일을 선택하세요.',
+                  '카카오톡, 구글 드라이브, WhatsApp 등\n'
+                  '저장한 곳을 선택하면 바로 해당 폴더가 열려요!',
                   style: TextStyle(
                       fontSize: 14,
                       color: AppTheme.textSecondary,
@@ -480,7 +628,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
                 Text('📂', style: TextStyle(fontSize: 26)),
                 SizedBox(width: 10),
                 Text(
-                  '내 기억 파일 선택하기',
+                  '저장 위치 선택해서 가져오기',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,

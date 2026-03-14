@@ -20,7 +20,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
       // ─────────────────────────────────────────────────────────────────
@@ -57,6 +57,7 @@ class DatabaseService {
         categoryId TEXT NOT NULL,
         title TEXT NOT NULL,
         isDone INTEGER DEFAULT 0,
+        isRepeatingAlarm INTEGER DEFAULT 0,
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL,
         FOREIGN KEY (categoryId) REFERENCES categories(id) ON DELETE CASCADE
@@ -153,8 +154,35 @@ class DatabaseService {
         );
       }
 
+      // v5 → v6: church 카테고리 필드 간소화 (담당자·전화번호·요일/시간 제거, 날짜/시간 달력+알림 통일)
+      if (oldVersion < 6) {
+        await txn.update(
+          'categories',
+          {'fields': '모임명||날짜/시간||장소||메모'},
+          where: 'id = ?',
+          whereArgs: ['church'],
+        );
+      }
+
+      // v6 → v7: church 카테고리 '날짜' → '날짜/시간' 으로 변경 (달력+시간+알림 통합)
+      if (oldVersion < 7) {
+        await txn.update(
+          'categories',
+          {'fields': '모임명||날짜/시간||장소||메모'},
+          where: 'id = ?',
+          whereArgs: ['church'],
+        );
+      }
+
+      // v7 → v8: memos 테이블에 isRepeatingAlarm 컬럼 추가 (매일 반복 알림)
+      if (oldVersion < 8) {
+        await db.execute(
+          'ALTER TABLE memos ADD COLUMN isRepeatingAlarm INTEGER DEFAULT 0',
+        );
+      }
+
       // ── 향후 버전 마이그레이션은 여기에 추가 ──
-      // if (oldVersion < 6) { ... }
+      // if (oldVersion < 9) { ... }
     });
   }
 

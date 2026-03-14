@@ -108,10 +108,13 @@ class _LockScreenState extends State<LockScreen>
     } catch (e) {
       debugPrint('🔐 auth error: $e');
     }
+    // 생체 인증 실패 시 자동으로 PIN 입력으로 전환
     if (mounted) {
       setState(() {
         _isAuthenticating = false;
-        _statusMessage = '다시 눌러주세요';
+        _showPinInput = true;
+        _pinInput = '';
+        _statusMessage = 'PIN 4자리를 입력해주세요';
       });
     }
   }

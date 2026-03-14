@@ -31,11 +31,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isSearching = false;
   bool _hasSearched = false;
 
+  // 알림 방식: 0=무음, 1=진동, 2=소리(기본)
+  int _notifMode = 2;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 앱 실행 중 알림 탭 시 즉시 해당 메모로 이동하는 콜백 등록
+    NotificationService.onNotificationTap = (memoId) {
+      if (mounted) _navigateToMemoById(memoId);
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 저장된 알림 방식 로드
+      final prefs = await SharedPreferences.getInstance();
+      final savedMode = prefs.getInt('notificationMode') ?? 2;
+      if (mounted) {
+        setState(() => _notifMode = savedMode);
+        NotificationService.notificationMode = savedMode;
+      }
       await context.read<AppState>().loadData();
       // .gido 파일로 앱이 열렸으면 따뜻한 확인 다이얼로그
       if (mounted && pendingGidoFilePath != null) {
@@ -60,6 +74,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
+    // 콜백 해제
+    NotificationService.onNotificationTap = null;
     super.dispose();
   }
 
@@ -244,6 +260,110 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // 알림 방식 선택 바텀시트
+  void _showNotifModeSheet(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                '🔔 알림 방식',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '알림이 도착할 때 어떻게 알려드릴까요?',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 20),
+              _notifOption(ctx, 0, '무음', Icons.notifications_off_outlined,
+                  '알림은 오지만 소리·진동 없음', isDark),
+              _notifOption(ctx, 1, '진동', Icons.vibration,
+                  '소리 없이 진동으로만 알림', isDark),
+              _notifOption(ctx, 2, '소리', Icons.volume_up_rounded,
+                  '소리와 진동으로 알림 (기본)', isDark),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _notifOption(BuildContext ctx, int mode, String label,
+      IconData icon, String desc, bool isDark) {
+    final isSelected = _notifMode == mode;
+    final color = isSelected ? const Color(0xFFFF9800) : Colors.grey;
+    return GestureDetector(
+      onTap: () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('notificationMode', mode);
+        if (mounted) {
+          setState(() => _notifMode = mode);
+          NotificationService.notificationMode = mode;
+        }
+        if (ctx.mounted) Navigator.pop(ctx);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFFF9800).withOpacity(0.08)
+              : (isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF5F5F5)),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFFFF9800).withOpacity(0.5)
+                : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 26, color: color),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected
+                            ? const Color(0xFFFF9800)
+                            : (isDark ? Colors.white : AppTheme.textPrimary),
+                      )),
+                  Text(desc,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.check_circle, color: Color(0xFFFF9800), size: 22),
+          ],
         ),
       ),
     );
@@ -742,6 +862,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 case 'theme':
                   context.read<ThemeNotifier>().toggle();
                   break;
+                case 'notif':
+                  _showNotifModeSheet(context, isDark);
+                  break;
                 case 'backup':
                   await _handleBackup(context);
                   break;
@@ -763,6 +886,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 20)),
                   const SizedBox(width: 12),
                   Text(isDark ? '라이트 모드' : '다크 모드', style: const TextStyle(fontSize: 16)),
+                ]),
+              ),
+              PopupMenuItem(
+                value: 'notif',
+                child: Row(children: [
+                  const Icon(Icons.notifications_active_outlined, size: 22),
+                  const SizedBox(width: 10),
+                  const Text('알림 방식', style: TextStyle(fontSize: 16)),
+                  const Spacer(),
+                  Text(
+                    ['무음', '진동', '소리'][_notifMode],
+                    style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                  ),
                 ]),
               ),
               const PopupMenuDivider(),

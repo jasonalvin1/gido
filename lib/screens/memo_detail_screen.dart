@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/memo_model.dart';
@@ -20,6 +21,7 @@ class MemoDetailScreen extends StatefulWidget {
 class _MemoDetailScreenState extends State<MemoDetailScreen> {
   late Memo _memo;
   final Map<String, bool> _showPassword = {};
+  bool _showDeleteTip = false;
 
   // 전화번호 필드인지 확인
   bool _isPhoneField(String fieldName) {
@@ -41,6 +43,10 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
   void initState() {
     super.initState();
     _memo = widget.memo;
+    // 반복 알림 메모라면 삭제 안내 툴팁 표시 (탭해서 닫을 수 있음)
+    if (_memo.isRepeatingAlarm) {
+      _showDeleteTip = true;
+    }
   }
 
   Color get _catColor => AppTheme.hexToColor(widget.category.color);
@@ -360,6 +366,44 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            // 반복 알림 삭제 안내 툴팁 (5초 후 자동 사라짐)
+            if (_memo.isRepeatingAlarm && _showDeleteTip)
+              GestureDetector(
+                onTap: () => setState(() => _showDeleteTip = false),
+                child: AnimatedOpacity(
+                  opacity: _showDeleteTip ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 400),
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _catColor.withOpacity(0.4), width: 1.2),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('🗑️', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            '알림을 그만 받으려면 오른쪽 위 휴지통 버튼을 눌러 삭제하세요',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF8D6E63),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.close, size: 16, color: _catColor.withOpacity(0.6)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
             // 각 필드 표시
             ...widget.category.fields.map((field) {
               final value = _memo.data[field];
@@ -367,6 +411,22 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
 
               final isSensitive = widget.category.isSensitiveField(field);
               final isVisible = _showPassword[field] == true;
+
+              // 반복 알림 메모: '마감일' → '알림 시간 🔔' + 친근한 문구로 표시
+              // 일반 메모: '마감일' → '알림시간'
+              final isRepeatingField = _memo.isRepeatingAlarm && field == '마감일';
+              String displayField = isRepeatingField
+                  ? '알림 시작 🔔'
+                  : (field == '마감일' ? '알림 시작' : field);
+              String displayValue = value;
+              if (isRepeatingField) {
+                try {
+                  final dt = DateFormat('yyyy년 M월 d일 HH:mm').parse(value);
+                  final period = dt.hour < 12 ? '오전' : '오후';
+                  final h = dt.hour == 0 ? 12 : (dt.hour <= 12 ? dt.hour : dt.hour - 12);
+                  displayValue = '매일 $period $h시에 알림 드려요 😊';
+                } catch (_) {}
+              }
 
               return Container(
                 width: double.infinity,
@@ -388,7 +448,7 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
                   children: [
                     // 필드 라벨
                     Text(
-                      field,
+                      displayField,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -404,7 +464,7 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
                           child: Text(
                             isSensitive && !isVisible
                                 ? '●' * value.length
-                                : value,
+                                : displayValue,
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w600,

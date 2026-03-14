@@ -41,7 +41,7 @@ class AuthService {
           sensitiveTransaction: false,
         ),
       ).timeout(
-        const Duration(seconds: 60), // 60초 후 자동 실패 처리 (stickyAuth 무한 대기 방지)
+        const Duration(seconds: 10), // 10초 후 자동 실패 처리 → PIN 화면으로 전환
         onTimeout: () {
           debugPrint('🔐 Biometric authentication timed out');
           return false;

@@ -11,40 +11,110 @@ class AppState extends ChangeNotifier {
   // 알람 datetime 파싱 형식 (memo_edit_screen과 동일)
   static const String _alarmDateTimeFormat = 'yyyy년 M월 d일 HH:mm';
 
-  /// 메모의 '마감일' 필드를 파싱해 DateTime 반환 (실패 시 null)
+  /// 메모의 알람 필드('마감일' 또는 '날짜/시간')를 파싱해 DateTime 반환 (실패 시 null)
   DateTime? _parseAlarmDateTime(Memo memo) {
-    final value = memo.data['마감일'];
-    if (value == null || value.isEmpty) return null;
-    try {
-      return DateFormat(_alarmDateTimeFormat).parse(value);
-    } catch (_) {
-      return null;
+    // alarmDateTimeFields 순서대로 확인 (마감일, 날짜/시간)
+    for (final field in ['마감일', '날짜/시간']) {
+      final value = memo.data[field];
+      if (value != null && value.isNotEmpty) {
+        try {
+          return DateFormat(_alarmDateTimeFormat).parse(value);
+        } catch (_) {}
+      }
     }
+    return null;
   }
 
-  /// 메모에 알람 예약 (완료되지 않은 할일만)
+  /// 메모에 알람 예약 (일회성 또는 매일 반복)
   Future<void> _scheduleAlarmIfNeeded(Memo memo) async {
-    // '할일' 카테고리(id: 'todo')이거나 마감일 필드가 있는 카테고리
     final alarmTime = _parseAlarmDateTime(memo);
     if (alarmTime == null) return;
     if (memo.isDone) return; // 완료된 항목은 알람 없음
 
     final notifId = NotificationService.memoIdToNotificationId(memo.id);
-    // 오전/오후 12시간 형식 (예: 오후 2:48)
+
+    // 매일 반복 알림 (약 복용, 생활 루틴 등)
+    if (memo.isRepeatingAlarm) {
+      await _notificationService.scheduleRepeatingDailyNotification(
+        id: notifId,
+        title: '💊 기억도우미',
+        body: '${memo.title} 시간이에요! 😊',
+        hour: alarmTime.hour,
+        minute: alarmTime.minute,
+        payload: memo.id,
+      );
+      return;
+    }
+
+    // 일회성 알림 (기존 로직)
     final timeStr = DateFormat('M월 d일 a h:mm', 'ko').format(alarmTime);
+    final isAppointment = memo.data.containsKey('날짜/시간') &&
+        (memo.data['날짜/시간'] ?? '').isNotEmpty;
+    final title = isAppointment ? '📅 약속/모임이 있어요!' : '할 일이 있어요!';
+    final body = isAppointment
+        ? '$timeStr 일정을 확인해보세요'
+        : '$timeStr 기억도우미에서 할 일을 확인해보세요';
+
     await _notificationService.scheduleNotification(
       id: notifId,
-      title: '할 일이 있어요!',
-      body: '$timeStr 기억도우미에서 할 일을 확인해보세요',
+      title: title,
+      body: body,
       scheduledTime: alarmTime,
-      payload: memo.id,  // 알림 탭 시 해당 메모로 이동하기 위한 ID
+      payload: memo.id,
     );
   }
 
-  /// 메모 알람 취소
+  /// 메모 알람 취소 (실패해도 흐름 중단 없음)
   Future<void> _cancelAlarm(Memo memo) async {
-    final notifId = NotificationService.memoIdToNotificationId(memo.id);
-    await _notificationService.cancelNotification(notifId);
+    try {
+      final notifId = NotificationService.memoIdToNotificationId(memo.id);
+      await _notificationService.cancelNotification(notifId);
+    } catch (e) {
+      debugPrint('⚠️ _cancelAlarm 실패 (memoId=${memo.id}): $e');
+    }
+  }
+
+  // 날짜 필드 파싱 형식 (memo_edit_screen과 동일)
+  static const String _dateFormat = 'yyyy년 M월 d일';
+
+  /// 메모의 '날짜' 필드를 파싱해 DateTime 반환 (실패 시 null)
+  DateTime? _parseDateField(Memo memo) {
+    final value = memo.data['날짜'];
+    if (value == null || value.isEmpty) return null;
+    try {
+      return DateFormat(_dateFormat).parse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 날짜 필드가 있는 메모에 생일/기념일 알림 예약 (하루 전 오전 9시, 매년 반복)
+  Future<void> _scheduleBirthdayAlarmIfNeeded(Memo memo) async {
+    final date = _parseDateField(memo);
+    if (date == null) return;
+
+    // 하루 전 오전 9시
+    final notifyAt = DateTime(date.year, date.month, date.day - 1, 9, 0);
+    final notifId = NotificationService.birthdayNotificationId(memo.id);
+    final name = memo.title.isNotEmpty ? memo.title : '소중한 날';
+
+    await _notificationService.scheduleBirthdayNotification(
+      id: notifId,
+      title: '🎂 기억도우미',
+      body: '내일은 $name 날이에요! 😊',
+      scheduledTime: notifyAt,
+      payload: memo.id,
+    );
+  }
+
+  /// 생일/기념일 알림 취소 (실패해도 흐름 중단 없음)
+  Future<void> _cancelBirthdayAlarm(Memo memo) async {
+    try {
+      final notifId = NotificationService.birthdayNotificationId(memo.id);
+      await _notificationService.cancelNotification(notifId);
+    } catch (e) {
+      debugPrint('⚠️ _cancelBirthdayAlarm 실패 (memoId=${memo.id}): $e');
+    }
   }
 
   List<Category> _categories = [];
@@ -80,6 +150,22 @@ class AppState extends ChangeNotifier {
     _memoCounts = {};
     for (final cat in _categories) {
       _memoCounts[cat.id] = await _db.getMemoCount(cat.id);
+    }
+    // 앱 실행 시 생일/기념일 알림 자동 갱신 (일회성 알림이므로 매년 재예약 필요)
+    await _rescheduleBirthdayAlarms();
+  }
+
+  /// 모든 메모의 날짜 필드를 확인하여 지난 알림을 다음 해로 재예약
+  Future<void> _rescheduleBirthdayAlarms() async {
+    try {
+      final allMemos = await _db.getAllMemos();
+      for (final memo in allMemos) {
+        if (_parseDateField(memo) != null) {
+          await _scheduleBirthdayAlarmIfNeeded(memo);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ 생일 알림 재예약 오류: $e');
     }
   }
 
@@ -152,37 +238,89 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addMemo(Memo memo) async {
+    // 1단계: DB 저장 (반드시 완료 후 진행)
     await _db.insertMemo(memo);
     _memoCounts[memo.categoryId] = (_memoCounts[memo.categoryId] ?? 0) + 1;
-    // 마감일 알람 예약
-    await _scheduleAlarmIfNeeded(memo);
-    notifyListeners();
-  }
 
-  Future<void> updateMemo(Memo memo) async {
-    memo.updatedAt = DateTime.now();
-    await _db.updateMemo(memo);
-    // 기존 알람 취소 후 새 알람 예약
-    await _cancelAlarm(memo);
-    await _scheduleAlarmIfNeeded(memo);
-    notifyListeners();
-  }
-
-  Future<void> toggleDone(Memo memo) async {
-    memo.isDone = !memo.isDone;
-    await _db.toggleMemoDone(memo.id, memo.isDone);
-    // 완료 시 알람 취소, 미완료로 되돌리면 재예약
-    if (memo.isDone) {
-      await _cancelAlarm(memo);
-    } else {
+    // 2단계: 알림 예약 (실패해도 저장 결과에 영향 없음)
+    try {
       await _scheduleAlarmIfNeeded(memo);
+    } catch (e) {
+      debugPrint('⚠️ addMemo - 알림 예약 실패 (memoId=${memo.id}): $e');
+    }
+    try {
+      await _scheduleBirthdayAlarmIfNeeded(memo);
+    } catch (e) {
+      debugPrint('⚠️ addMemo - 생일 알림 예약 실패 (memoId=${memo.id}): $e');
+    }
+
+    notifyListeners();
+  }
+
+  /// 여러 메모를 한 번에 추가 (약 복용 추천 세트 등)
+  Future<void> addMemos(List<Memo> memos) async {
+    for (final memo in memos) {
+      // 1단계: DB 저장 (반드시 완료)
+      await _db.insertMemo(memo);
+      _memoCounts[memo.categoryId] = (_memoCounts[memo.categoryId] ?? 0) + 1;
+
+      // 2단계: 알림 예약 (한 항목 실패해도 다음 항목 계속 진행)
+      try {
+        await _scheduleAlarmIfNeeded(memo);
+      } catch (e) {
+        debugPrint('⚠️ addMemos - 알림 예약 실패 (memoId=${memo.id}): $e');
+      }
     }
     notifyListeners();
   }
 
+  Future<void> updateMemo(Memo memo) async {
+    // 1단계: DB 저장 (반드시 완료 후 진행)
+    memo.updatedAt = DateTime.now();
+    await _db.updateMemo(memo);
+
+    // 2단계: 알림 갱신 (실패해도 저장 성공 결과에 영향 없음)
+    try {
+      await _cancelAlarm(memo);
+      await _scheduleAlarmIfNeeded(memo);
+    } catch (e) {
+      debugPrint('⚠️ updateMemo - 알림 갱신 실패 (memoId=${memo.id}): $e');
+    }
+    try {
+      await _cancelBirthdayAlarm(memo);
+      await _scheduleBirthdayAlarmIfNeeded(memo);
+    } catch (e) {
+      debugPrint('⚠️ updateMemo - 생일 알림 갱신 실패 (memoId=${memo.id}): $e');
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> toggleDone(Memo memo) async {
+    // 1단계: DB 상태 변경 (반드시 완료)
+    memo.isDone = !memo.isDone;
+    await _db.toggleMemoDone(memo.id, memo.isDone);
+
+    // 2단계: 알림 처리 (실패해도 완료 상태 변경에 영향 없음)
+    try {
+      if (memo.isDone) {
+        await _cancelAlarm(memo);
+      } else {
+        await _scheduleAlarmIfNeeded(memo);
+      }
+    } catch (e) {
+      debugPrint('⚠️ toggleDone - 알림 처리 실패 (memoId=${memo.id}): $e');
+    }
+
+    notifyListeners();
+  }
+
   Future<void> deleteMemo(Memo memo) async {
-    // 삭제 전 알람 취소
+    // 1단계: 알림 취소 시도 (실패해도 DB 삭제는 반드시 진행)
     await _cancelAlarm(memo);
+    await _cancelBirthdayAlarm(memo);
+
+    // 2단계: DB 삭제 (알림 취소 성공 여부와 무관하게 무조건 실행)
     await _db.deleteMemo(memo.id);
     _memoCounts[memo.categoryId] = (_memoCounts[memo.categoryId] ?? 1) - 1;
     notifyListeners();
@@ -198,9 +336,11 @@ class AppState extends ChangeNotifier {
 
   /// 카테고리 간 메모 이동 (ID 기반, 필드 매핑 적용)
   Future<void> moveMemo(Memo memo, String newCategoryId, Map<String, String> newData) async {
-    await _cancelAlarm(memo); // 기존 알람 취소
+    // 1단계: 기존 알림 취소 시도 (실패해도 이동은 진행)
+    await _cancelAlarm(memo);
+
+    // 2단계: DB 이동 (반드시 완료)
     await _db.moveMemo(memo.id, newCategoryId, newData);
-    // 메모 카운트 업데이트
     _memoCounts[memo.categoryId] = (_memoCounts[memo.categoryId] ?? 1) - 1;
     _memoCounts[newCategoryId] = (_memoCounts[newCategoryId] ?? 0) + 1;
     notifyListeners();

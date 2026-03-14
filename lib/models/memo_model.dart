@@ -33,7 +33,7 @@ class Category {
 
   // 날짜+시간 선택 필드 (달력 + 시간 UI, 알람 예약용)
   // 저장 형식: 'yyyy년 M월 d일 HH:mm'
-  static const alarmDateTimeFields = ['마감일'];
+  static const alarmDateTimeFields = ['마감일', '날짜/시간'];
 
   bool isSensitiveField(String fieldName) {
     return sensitiveFields.contains(fieldName);
@@ -114,7 +114,7 @@ class Category {
         name: '약속/모임',
         icon: 'assets/icons/church.png',
         color: '#9C27B0',
-        fields: ['모임명', '요일/시간', '장소', '담당자', '전화번호', '메모'],
+        fields: ['모임명', '날짜/시간', '장소', '메모'],
         isDefault: true,
         sortOrder: 3,
       ),
@@ -137,6 +137,7 @@ class Memo {
   String title;
   Map<String, String> data;
   bool isDone;
+  bool isRepeatingAlarm; // 매일 반복 알림 여부 (약 복용 등)
   final DateTime createdAt;
   DateTime updatedAt;
 
@@ -146,6 +147,7 @@ class Memo {
     required this.title,
     required this.data,
     this.isDone = false,
+    this.isRepeatingAlarm = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : id = id ?? const Uuid().v4(),
@@ -158,6 +160,7 @@ class Memo {
       'categoryId': categoryId,
       'title': title,
       'isDone': isDone ? 1 : 0,
+      'isRepeatingAlarm': isRepeatingAlarm ? 1 : 0,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
     };
@@ -169,6 +172,7 @@ class Memo {
       categoryId: map['categoryId'],
       title: map['title'],
       isDone: map['isDone'] == 1,
+      isRepeatingAlarm: (map['isRepeatingAlarm'] ?? 0) == 1,
       data: fieldData,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt']),

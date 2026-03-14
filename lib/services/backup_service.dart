@@ -297,21 +297,22 @@ class BackupService {
       await _db.updateCategoryIcon(e.key, e.value);
     }
 
-    // 구버전 백업 카테고리 이름 마이그레이션 (교회/모임 → 약속/모임)
+    // 기본 카테고리 필드를 현재 앱 버전 기준으로 강제 업데이트
+    // (구버전 백업 복원 시 필드 구조가 달라도 항상 최신 필드로 맞춤)
+    final currentDefaults = Category.defaults();
     final allCats = await _db.getCategories();
     for (final cat in allCats) {
-      if (cat.id == 'church' && cat.name == '교회/모임') {
-        await _db.updateCategory(Category(
-          id: cat.id,
-          name: '약속/모임',
-          icon: cat.icon,
-          color: cat.color,
-          fields: cat.fields,
-          isDefault: cat.isDefault,
-          sortOrder: cat.sortOrder,
-        ));
-        break;
-      }
+      final defaultCat = currentDefaults.where((d) => d.id == cat.id).firstOrNull;
+      if (defaultCat == null) continue; // 커스텀 카테고리는 건드리지 않음
+      await _db.updateCategory(Category(
+        id: cat.id,
+        name: defaultCat.name,   // 이름도 최신으로
+        icon: cat.icon,          // 아이콘은 이미 위에서 업데이트됨
+        color: cat.color,        // 색상은 사용자 설정 유지
+        fields: defaultCat.fields, // 필드는 반드시 최신 버전으로
+        isDefault: cat.isDefault,
+        sortOrder: cat.sortOrder,
+      ));
     }
 
     // 메모 복원

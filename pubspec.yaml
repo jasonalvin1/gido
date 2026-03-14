@@ -3,7 +3,7 @@ description: 기억 도우미 - 어르신을 위한 기억 보조 앱
 
 publish_to: 'none'
 
-version: 1.0.7+14
+version: 1.0.9+16
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

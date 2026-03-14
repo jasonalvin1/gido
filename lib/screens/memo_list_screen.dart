@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/memo_model.dart';
@@ -277,7 +278,16 @@ class _MemoListScreenState extends State<MemoListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CategoryIcon(icon: widget.category.icon, size: 64),
+          // 손 흔드는 효과: 지연 후 좌우로 천천히 2번 흔들고 멈춤
+          CategoryIcon(icon: widget.category.icon, size: 64)
+              .animate()
+              .then(delay: const Duration(milliseconds: 600))
+              .shake(
+                duration: const Duration(milliseconds: 1200),
+                hz: 2,
+                rotation: 0.10,
+                offset: const Offset(4, 0),
+              ),
           const SizedBox(height: 16),
           const Text(
             '아직 메모가 없어요',
@@ -285,7 +295,10 @@ class _MemoListScreenState extends State<MemoListScreen> {
               fontSize: AppTheme.fontSizeMedium,
               color: AppTheme.textSecondary,
             ),
-          ),
+          ).animate().fadeIn(
+                delay: const Duration(milliseconds: 400),
+                duration: const Duration(milliseconds: 500),
+              ),
           const SizedBox(height: 8),
           const Text(
             '아래 + 버튼을 눌러 추가하세요',
@@ -293,7 +306,10 @@ class _MemoListScreenState extends State<MemoListScreen> {
               fontSize: 17,
               color: AppTheme.textSecondary,
             ),
-          ),
+          ).animate().fadeIn(
+                delay: const Duration(milliseconds: 600),
+                duration: const Duration(milliseconds: 500),
+              ),
         ],
       ),
     );
@@ -301,6 +317,8 @@ class _MemoListScreenState extends State<MemoListScreen> {
 
   Widget _buildMemoCard(Memo memo) {
     if (_isBirthdayCategory) return _buildBirthdayCard(memo);
+
+    final isRepeating = memo.isRepeatingAlarm;
 
     return GestureDetector(
       onTap: () async {
@@ -316,11 +334,12 @@ class _MemoListScreenState extends State<MemoListScreen> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          // 반복 알림: 연한 주황색 배경 + 전체 테두리
+          color: isRepeating ? const Color(0xFFFFF3E0) : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border(
-            left: BorderSide(color: _catColor, width: 5),
-          ),
+          border: isRepeating
+              ? Border.all(color: _catColor.withOpacity(0.55), width: 1.8)
+              : Border(left: BorderSide(color: _catColor, width: 5)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
@@ -331,7 +350,8 @@ class _MemoListScreenState extends State<MemoListScreen> {
         ),
         child: Row(
           children: [
-            if (_isTodoCategory) ...[
+            // 반복 알림 메모는 체크마크 숨김
+            if (_isTodoCategory && !isRepeating) ...[
               GestureDetector(
                 onTap: () async {
                   await context.read<AppState>().toggleDone(memo);
@@ -382,14 +402,36 @@ class _MemoListScreenState extends State<MemoListScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatDate(memo.createdAt),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFFBBBBBB),
+                  // 반복 알림은 생성일 표시 불필요
+                  if (!isRepeating) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatDate(memo.createdAt),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFFBBBBBB),
+                      ),
                     ),
-                  ),
+                  ],
+                  // 반복 알림 배지
+                  if (isRepeating) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.notifications_active,
+                            size: 14, color: _catColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          '매일 1회 반복 알림 중',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _catColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -503,8 +545,21 @@ class _MemoListScreenState extends State<MemoListScreen> {
   String _getPreviewText(Memo memo) {
     final previews = memo.data.entries
         .where((e) => e.value.isNotEmpty && !Category.sensitiveFields.contains(e.key))
+        .where((e) => e.key != '할일') // 제목과 중복되므로 제외
         .take(2)
-        .map((e) => '${e.key}: ${e.value}')
+        .map((e) {
+          if (e.key == '마감일') {
+            // 반복 알림: 날짜 없이 시간만 표시 (예: 08:00)
+            if (memo.isRepeatingAlarm) {
+              try {
+                final dt = DateFormat('yyyy년 M월 d일 HH:mm').parse(e.value);
+                return '알림 시작: ${DateFormat('HH:mm').format(dt)}';
+              } catch (_) {}
+            }
+            return '알림 시작: ${e.value}';
+          }
+          return '${e.key}: ${e.value}';
+        })
         .toList();
     return previews.join(' · ');
   }

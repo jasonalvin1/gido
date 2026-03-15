@@ -1025,7 +1025,15 @@ class _MemoEditScreenState extends State<MemoEditScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        hasValue ? value : '날짜를 선택하세요',
+                        // 생일 카테고리 + 음력 서브텍스트가 있으면 "양력" 접두어 추가
+                        // → 사용자가 음력으로 입력했을 때 저장된 양력 날짜임을 명확히 표시
+                        // DB에 저장되는 값("yyyy년 M월 d일")은 변하지 않으며 표시만 변경
+                        hasValue
+                            ? (widget.category.id == 'birthday' &&
+                                    lunarText.isNotEmpty
+                                ? '양력 $value'
+                                : value)
+                            : '날짜를 선택하세요',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,

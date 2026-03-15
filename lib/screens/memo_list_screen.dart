@@ -331,8 +331,8 @@ class _MemoListScreenState extends State<MemoListScreen> {
         _loadMemos();
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(20),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           // 반복 알림: 연한 주황색 배경 + 전체 테두리
           color: isRepeating ? const Color(0xFFFFF3E0) : Colors.white,
@@ -384,7 +384,7 @@ class _MemoListScreenState extends State<MemoListScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: memo.isDone
                           ? AppTheme.textSecondary
@@ -392,21 +392,21 @@ class _MemoListScreenState extends State<MemoListScreen> {
                       decoration: memo.isDone ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
                     _getPreviewText(memo),
                     style: const TextStyle(
-                      fontSize: 17,
+                      fontSize: 15,
                       color: AppTheme.textSecondary,
                     ),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // 반복 알림은 생성일 표시 불필요
+                  // 반복 알림은 수정일 표시 불필요
                   if (!isRepeating) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
-                      _formatDate(memo.createdAt),
+                      _formatDate(memo.updatedAt),
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFFBBBBBB),
@@ -546,6 +546,7 @@ class _MemoListScreenState extends State<MemoListScreen> {
     final previews = memo.data.entries
         .where((e) => e.value.isNotEmpty && !Category.sensitiveFields.contains(e.key))
         .where((e) => e.key != '할일') // 제목과 중복되므로 제외
+        .where((e) => e.value.trim() != memo.title.trim()) // 제목과 동일한 값 중복 제외
         .take(2)
         .map((e) {
           if (e.key == '마감일') {
@@ -564,13 +565,15 @@ class _MemoListScreenState extends State<MemoListScreen> {
     return previews.join(' · ');
   }
 
-  /// 생성일 표시: 오늘/어제/N일 전/날짜
+  /// 수정일 표시: "수정일: 오늘" / "수정일: 어제" / "수정일: N일 전" / "수정일: yyyy.MM.dd"
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inDays == 0) return '오늘';
-    if (diff.inDays == 1) return '어제';
-    if (diff.inDays < 7) return '${diff.inDays}일 전';
-    return DateFormat('yyyy.MM.dd').format(dt);
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(target).inDays;
+    if (diff == 0) return '수정일: 오늘';
+    if (diff == 1) return '수정일: 어제';
+    if (diff < 7) return '수정일: ${diff}일 전';
+    return '수정일: ${DateFormat('yyyy.MM.dd').format(dt)}';
   }
 }
